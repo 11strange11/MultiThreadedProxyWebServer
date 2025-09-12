@@ -1,4 +1,5 @@
 #include "proxy_parse.h"
+#include <cstddef>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -65,6 +66,8 @@ pthread_mutex_t lock;
 
 cache_element* head;
 int cache_size;
+
+
 
 int main(int argc, char* argv[]){
     int client_socketId, client_len;
@@ -149,10 +152,13 @@ int main(int argc, char* argv[]){
         inet_ntop(AF_INET, &ip_addr, str,INET_ADDRSTRLEN);
         printf("Client is connected with port number &d and ip address %s\n", ntohs(client_addr.sin_port), str);
 
-
-
+        // creating a thread for each client and execute thread function,
+        // And, when another client connects, the thread function will be executed again for the new client
+        pthread_create(&tid[i], NULL, thread_fn, (void*)&Connnected_socketId[i]);  
+        i++;
     }
-
+    close(proxy_socketId);
+    return 0;
 
 }
 
