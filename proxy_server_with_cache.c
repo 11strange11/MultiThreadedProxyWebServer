@@ -1,5 +1,4 @@
 #include "proxy_parse.h"
-#include <cstddef>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,9 +18,11 @@
 
 // Number of clients that can connect to the proxy server
 #define MAX_CLIENTS 10
+#define MAX_BYTES 4096
+#define MAX_SIZE 200 * 1024
+#define MAX_ELEMENT_SIZE 10 * 1024
+
 typedef struct cache_element cache_element;
-
-
 
 // list of all elements in cache
 struct cache_element{
@@ -67,6 +68,104 @@ pthread_mutex_t lock;
 cache_element* head;
 int cache_size;
 
+
+void* thread_fn(void* socketNew){
+    //checking if the semaphore is available (meaning the cache is not full)
+    sem_wait(&semaphore);
+    int p;
+    sem_getvalue(&semaphore, &p);
+    printf("Semaphore value: %d\n", p);
+
+    // Obtaining the socket id from the thread function
+    int* t = (int*)(socketNew);
+    int socket = *t;
+    int bytes_send_client, len; //bytes sent to the client
+
+    // Allocating memory for the buffer (4KB) for each client
+    char *buffer = (char*)calloc(MAX_BYTES, sizeof(char));
+
+
+    bzero(buffer, MAX_BYTES);
+    // Receiving the request of client by proxy server
+    bytes_send_client = recv(socket, buffer, MAX_BYTES, 0);
+
+
+    // while the client is sending the request to the proxy server
+    while(bytes_send_client > 0){
+        len = strlen(buffer);
+        if(strstr(buffer, "\r\n\r\n") == NULL){
+            bytes_send_client = recv(socket, buffer + len, MAX_BYTES - len, 0);
+        }
+        else{
+            break;
+        }
+    }
+    // Creating a temporary request buffer
+    char *tempReq = (char*)malloc(strlen(buffer)*sizeof(char) + 1);
+
+    for(int i=0; i<strlen(buffer); i++){
+        tempReq[i] = buffer[i];
+    }
+    struct cache_element* temp = find(tempReq);
+    if(temp != NULL){  // if the request is found in the cache, then send the response to the client
+        int size = temp->len/sizeof(char);
+        int pos = 0;
+        char response[MAX_BYTES];
+        while(pos < size){
+            bzero(response, MAX_BYTES);
+            for(int i=0; i<MAX_BYTES; i++){
+                response[i] = temp->data[pos];
+                pos++;
+            }
+            send(socket, response, MAX_BYTES, 0);
+        }
+        printf("Data retrieved from cache\n\n");
+        printf("%s\n\n", response);
+    }
+    else if(bytes_send_client > 0){
+        len = strlen(buffer);
+        ParsedRequest* request = ParsedRequest_create();
+
+        if(ParsedRequest_parse(request, buffer, len) < 0){
+            printf("Parsing failed\n");
+        }
+        else{
+            bzero(buffer, MAX_BYTES);
+            if(!strcmp(request->method, "GET")){
+                if(request->host && request->path && (checkHTTPversion(request->version) == 1) ){
+                    bytes_send_client = handle_request(socket, request, tempReq);
+                    if(bytes_send_client == -1){
+                        sendErrorMessage(socket, 500);
+                    }
+                }
+                else{
+                    sendErrorMessage(socket, 500);
+                }
+            }
+            else{
+                printf("Method not supported\n");
+            }
+        }
+        ParsedRequest_destroy(request); // destroying the request
+    }
+    else if(bytes_send_client < 0){
+        perror("Error in receiving from client\n");
+    }
+    else if(bytes_send_client == 0){
+        printf("Client disconnected\n");
+    }
+    // shutting down the socket and closing the socket
+    shutdown(socket, SHUT_RDWR);
+    close(socket);
+    free(buffer); // freeing the buffer
+    sem_post(&semaphore); // 
+
+    sem_getvalue(&semaphore, &p);
+    printf("Semaphore post value is %d\n", p);
+    free(tempReq);
+    return NULL;
+
+}
 
 
 int main(int argc, char* argv[]){
@@ -142,8 +241,8 @@ int main(int argc, char* argv[]){
             Connnected_socketId[i] = client_socketId; 
         }
 
-        struct sockaddr_in *client_pt = (struct sockaddr_in *)&client_addr;
         // getting the ip address of the client
+        struct sockaddr_in *client_pt = (struct sockaddr_in *)&client_addr;
         struct in_addr ip_addr = client_pt->sin_addr;
 
         char str[INET_ADDRSTRLEN];
