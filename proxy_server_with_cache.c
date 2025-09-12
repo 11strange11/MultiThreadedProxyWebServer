@@ -51,7 +51,7 @@ the number of clients that will connect will each
 have individual thread, and each thread will have indiviual 
 socket
 */
-pthread_t threadid[MAX_CLIENTS];
+pthread_t tid[MAX_CLIENTS]; // array of thread Ids for each client
 
 /*
 Semaphore and mutex locks are used when there is a shared resource (cache)
@@ -62,6 +62,65 @@ sem_t semaphore;
 
 // lock has only two states: locked and unlocked
 pthread_mutex_t lock; 
+
+cache_element* head;
+int cache_size;
+
+int main(int argc, char* argv[]){
+    int client_socketId, client_len;
+
+    // initialize the socket address struct
+    struct sockaddr_in server_addr, client_addr;
+
+    // initialize the semaphore
+    sem_init(&semaphore, 0, MAX_CLIENTS);
+
+    //initialize the mutex
+    pthread_mutex_init(&lock, NULL);
+
+
+    // checking  if the port number is provided
+    if(argc == 2){ // if two arguments are provided, then the second argument is the port number
+        port_number = atoi(argv[1]);
+    }
+    else{ // if not, then the port number is not provided
+        printf("Too few arguments\n");
+        exit(1);
+    }
+
+    printf("Starting proxy server on port: %d\n", port_number);
+
+    // There is just one proxy socket that will be used to accept connections from clients
+    // This proxy socket will spawn a thread for each client that connects to the proxy server
+    proxy_socketId = socket(AF_INET, SOCK_STREAM, 0); 
+
+    if(proxy_socketId < 0){
+        perror("Failed to create a socket");
+        exit(1);
+    }
+    int reuse = 1;
+    if(setsockopt(proxy_socketId, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse)) < 0){
+        perror("serSockOpt failed\n");
+    }
+
+    bzero((char*)&server_addr, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(port_number);
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+    // bind is used to bind the socket to the port number and address
+    if(bind(proxy_socketId, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0){
+        perror("Port is not available\n");
+        exit(1);
+    }
+    printf("Binding on port: %d\n", port_number);
+    int listen_status = listen(proxy_socketId, MAX_CLIENTS);
+    if(listen_status < 0){
+        perror("Error in listening\n");
+        exit(1);
+    }
+    
+
+}
 
 
 
