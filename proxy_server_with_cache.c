@@ -68,6 +68,51 @@ pthread_mutex_t lock;
 cache_element* head;
 int cache_size;
 
+int connectRemoteServer(char *host_addr, int port_num){
+
+}
+
+int handle_request(int clientSocket, ParsedRequest *request, char *tempReq){
+    // Creating a buffer to store the request
+    char *buf = (char *)malloc(sizeof(char)*MAX_BYTES);
+    strcpy(buf, "GET");
+    strcat(buf, request->path);
+    strcat(buf, " ");
+    strcat(buf, request->version);
+    strcat(buf, "\r\n");
+
+    int len = strlen(buf);
+
+    // Setting the Connection header
+    if (ParsedHeader_set(request, "Connection", "close") < 0){
+		printf("set header key is not working\n");
+	}
+    // Setting the Host header
+    if(ParsedHeader_get(request, "Host") == NULL){
+		if(ParsedHeader_set(request, "Host", request->host) < 0){
+			printf("Set \"Host\" header key not working\n");
+		}
+	}
+
+    if(ParsedRequest_unparse_headers(request, buf+len, (size_t)MAX_BYTES - len) < 0){
+        printf("unparsing failed\n");
+    }
+
+    int server_port = 80; // End server (not proxy server) port
+    if(request->port != NULL ){
+        server_port = atoi(request->port);
+    }
+
+    int remoteSocketID = conenctRemoteServer(request->host, server_port);
+
+    if(remoteSocketID < 0){
+        return -1;
+    }
+
+    int bytes_send = send(remoteSocketID, buf, strlen(buf), 0);
+
+}
+
 
 void* thread_fn(void* socketNew){
     //checking if the semaphore is available (meaning the cache is not full)
