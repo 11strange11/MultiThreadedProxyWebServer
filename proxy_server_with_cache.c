@@ -118,7 +118,41 @@ int main(int argc, char* argv[]){
         perror("Error in listening\n");
         exit(1);
     }
-    
+
+    // Defining iterator, how many client are connected to the proxy server
+    int i = 0;
+    int Connnected_socketId[MAX_CLIENTS];
+
+    // 
+    while(1){
+        // cleaning the client address , removing the garbage values
+        bzero((char* )&client_addr, sizeof(client_addr));
+        client_len = sizeof(client_addr);
+        // accept is used to accept the connection from the client
+        client_socketId = accept(proxy_socketId, (struct sockaddr*)&client_addr, (socklen_t*)&client_len);
+        // if socket is not open
+        if(client_socketId < 0){
+            printf("Not able to connect to the client\n");
+            exit(1);
+        }
+        else{
+            Connnected_socketId[i] = client_socketId; 
+        }
+
+        struct sockaddr_in *client_pt = (struct sockaddr_in *)&client_addr;
+        // getting the ip address of the client
+        struct in_addr ip_addr = client_pt->sin_addr;
+
+        char str[INET_ADDRSTRLEN];
+
+        // Extracting the ip address of the client from network format to string format
+        inet_ntop(AF_INET, &ip_addr, str,INET_ADDRSTRLEN);
+        printf("Client is connected with port number &d and ip address %s\n", ntohs(client_addr.sin_port), str);
+
+
+
+    }
+
 
 }
 
