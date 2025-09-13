@@ -140,6 +140,47 @@ int handle_request(int clientSocket, ParsedRequest *request, char *tempReq){
 
     int bytes_send = send(remoteSocketID, buf, strlen(buf), 0);
 
+    bzero(buf, MAX_BYTES);
+
+    // Receiving bytes from the remote server
+    bytes_send = recv(remoteSocketID, buf, MAX_BYTES-1, 0);
+	char *temp_buffer = (char*)malloc(sizeof(char)*MAX_BYTES); //temp buffer
+	int temp_buffer_size = MAX_BYTES;
+	int temp_buffer_index = 0;
+
+    while(bytes_send > 0){
+        bytes_send = send(clientSocket, buf, bytes_send, 0);
+
+        for(int i=0;i<bytes_send/sizeof(char);i++){
+			temp_buffer[temp_buffer_index] = buf[i];
+			// printf("%c",buf[i]); // Response Printing
+			temp_buffer_index++;
+		}
+        temp_buffer_size += MAX_BYTES;
+        temp_buffer=(char*)realloc(temp_buffer,temp_buffer_size);
+
+        if(bytes_send < 0){
+            perror("Error in sending data to client socket\n");
+			break;
+        }
+        // Freeing the buffer
+        bzero(buf, MAX_BYTES);
+        // Receiving bytes from the remote server
+		bytes_send = recv(remoteSocketID, buf, MAX_BYTES-1, 0);
+
+    }
+    // Adding the response to the cache
+    temp_buffer[temp_buffer_index]='\0';
+	free(buf);
+	add_cache_element(temp_buffer, strlen(temp_buffer), tempReq);
+	printf("Done\n");
+
+    // Freeing the temp buffer
+	free(temp_buffer);
+	
+	// Closing the remote socket
+ 	close(remoteSocketID);
+	return 0;
 }
 
 
