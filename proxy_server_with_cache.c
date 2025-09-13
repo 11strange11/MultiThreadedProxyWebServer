@@ -1,4 +1,5 @@
 #include "proxy_parse.h"
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -68,7 +69,35 @@ pthread_mutex_t lock;
 cache_element* head;
 int cache_size;
 
+// Connceting to end server (eg. host of google.com)
 int connectRemoteServer(char *host_addr, int port_num){
+    int remoteSocket = socket(AF_INET, SOCK_STREAM, 0);
+    if(remoteSocket<0){
+        printf("Error in creating your socket\n");
+        return -1;
+    }
+    struct hostent* host = gethostbyname(host_addr); //gets the host address
+    if(host == NULL){
+        fprintf(stderr, "No such host exists\n");
+        return -1;
+    }
+    struct sockaddr_in server_addr;
+    
+    bzero((char *)&server_addr, sizeof(server_addr)); 
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(port_num);
+    
+    // copying the host address to the server address
+    bcopy((char *)host->h_addr,(char *)&server_addr.sin_addr.s_addr,host->h_length);
+
+    // Connect to the remote server
+    if( connect(remoteSocket, (struct sockaddr*)&server_addr, (socklen_t)sizeof(server_addr)) < 0 )
+	{
+		fprintf(stderr, "Error in connecting !\n"); 
+		return -1;
+	}
+    // free host_addr
+    return remoteSocket;
 
 }
 
@@ -103,7 +132,7 @@ int handle_request(int clientSocket, ParsedRequest *request, char *tempReq){
         server_port = atoi(request->port);
     }
 
-    int remoteSocketID = conenctRemoteServer(request->host, server_port);
+    int remoteSocketID = connectRemoteServer(request->host, server_port);
 
     if(remoteSocketID < 0){
         return -1;
