@@ -246,10 +246,10 @@ int connectRemoteServer(char *host_addr, int port_num){
 
 }
 
-int handle_request(int clientSocket, ParsedRequest *request, char *tempReq){
+int handle_request(int clientSocket, struct ParsedRequest *request, char *tempReq){
     // Creating a buffer to store the request
     char *buf = (char *)malloc(sizeof(char)*MAX_BYTES);
-    strcpy(buf, "GET");
+    strcpy(buf, "GET ");
     strcat(buf, request->path);
     strcat(buf, " ");
     strcat(buf, request->version);
@@ -336,13 +336,26 @@ int checkHTTPversion(char* msg){
     else if(strncmp(msg, "HTTP/1.0", 8) == 0){
         version = 1;
     }
-    else if(strncmp(msg, "HTTP/1.0", 8) == 0){
-        version = 1;
-    }
     else{
         version = -1;
     }
     return version;
+}
+
+// Function to extract target URL from proxy request
+char* extractTargetURL(char* path) {
+    // Skip the leading slash
+    if (path[0] == '/') {
+        path++;
+    }
+    
+    // Check if it's a full URL (starts with http:// or https://)
+    if (strncmp(path, "http://", 7) == 0 || strncmp(path, "https://", 8) == 0) {
+        return strdup(path);
+    }
+    
+    // If not a full URL, return NULL
+    return NULL;
 }
 
 
@@ -379,29 +392,17 @@ void* thread_fn(void* socketNew){
     }
     // Creating a temporary request buffer
     char *tempReq = (char*)malloc(strlen(buffer)*sizeof(char) + 1);
-
-    for(int i=0; i<strlen(buffer); i++){
-        tempReq[i] = buffer[i];
-    }
+    strcpy(tempReq, buffer);
+    
     struct cache_element* temp = find(tempReq);
     if(temp != NULL){  // if the request is found in the cache, then send the response to the client
-        int size = temp->len/sizeof(char);
-        int pos = 0;
-        char response[MAX_BYTES];
-        while(pos < size){
-            bzero(response, MAX_BYTES);
-            for(int i=0; i<MAX_BYTES; i++){
-                response[i] = temp->data[pos];
-                pos++;
-            }
-            send(socket, response, MAX_BYTES, 0);
-        }
-        printf("Data retrieved from cache\n\n");
-        printf("%s\n\n", response);
+        printf("Data retrieved from cache\n");
+        send(socket, temp->data, temp->len, 0);
+        printf("Cached response sent to client\n");
     }
     else if(bytes_send_client > 0){
         len = strlen(buffer);
-        ParsedRequest* request = ParsedRequest_create();
+        struct ParsedRequest* request = ParsedRequest_create();
 
         if(ParsedRequest_parse(request, buffer, len) < 0){
             printf("Parsing failed\n");
@@ -410,9 +411,33 @@ void* thread_fn(void* socketNew){
             bzero(buffer, MAX_BYTES);
             if(!strcmp(request->method, "GET")){
                 if(request->host && request->path && (checkHTTPversion(request->version) == 1) ){
-                    bytes_send_client = handle_request(socket, request, tempReq);
-                    if(bytes_send_client == -1){
-                        sendErrorMessage(socket, 500);
+                    // Check if this is a proxy request (path contains a full URL)
+                    char* targetURL = extractTargetURL(request->path);
+                    if(targetURL != NULL) {
+                        // This is a proxy request, parse the target URL
+                        struct ParsedRequest* targetRequest = ParsedRequest_create();
+                        char* proxyRequest = (char*)malloc(strlen(targetURL) + 20);
+                        sprintf(proxyRequest, "GET %s HTTP/1.1\r\nHost: %s\r\n\r\n", targetURL, request->host);
+                        
+                        if(ParsedRequest_parse(targetRequest, proxyRequest, strlen(proxyRequest)) >= 0) {
+                            bytes_send_client = handle_request(socket, targetRequest, tempReq);
+                            if(bytes_send_client == -1){
+                                sendErrorMessage(socket, 500);
+                            }
+                        } else {
+                            printf("Target URL parsing failed\n");
+                            sendErrorMessage(socket, 400);
+                        }
+                        
+                        ParsedRequest_destroy(targetRequest);
+                        free(proxyRequest);
+                        free(targetURL);
+                    } else {
+                        // Regular request
+                        bytes_send_client = handle_request(socket, request, tempReq);
+                        if(bytes_send_client == -1){
+                            sendErrorMessage(socket, 500);
+                        }
                     }
                 }
                 else{
